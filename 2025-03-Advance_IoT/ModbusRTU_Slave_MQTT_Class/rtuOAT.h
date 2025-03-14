@@ -18,6 +18,7 @@ private:
   int mqtt_port;
   const char* dp_name;
   const char* mac_no;
+  WiFiClient wifiClient;
   PubSubClient mqttClient;
 
   int slaveId;
@@ -35,9 +36,12 @@ public:
   void publishMessage(char* topic, const char* message);
   void run();
   void start();
-  void print();
+  void print_data();
   static void modbus_Task(void* pvParam);
+  static void Network_Task(void* pvParam);
   static void mqtt_Task(void* pvParam);
+  static void broke_modbus_Task(void* pvParam);
+  static void esp_Task(void* pvParam);
 };
 
 #endif

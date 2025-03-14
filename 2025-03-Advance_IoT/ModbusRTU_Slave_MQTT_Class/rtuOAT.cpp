@@ -107,6 +107,18 @@ void rtuOAT::publishMessage(char *topic, const char *message) {
     digitalWrite(Pinled1, LOW);
   }
 }
+
+void rtuOAT::print_data() {
+  for (int i = 0; i < 13; i++) {
+    for (int j = 0; j < 5; j++) {
+      Serial.print(def_tb[i][j]);  // พิมพ์ค่าแต่ละตัว
+      Serial.print(" ");           // เพิ่มช่องว่างเพื่อให้อ่านง่าย
+    }
+    Serial.println();  // ขึ้นบรรทัดใหม่เมื่อจบหนึ่งแถว
+  }
+  Serial.println("/****************************/");
+}
+
 /*void loop()*/
 void rtuOAT::run() {
   modbus_slave.poll(got_data, num_got_data);
@@ -114,10 +126,9 @@ void rtuOAT::run() {
 }
 
 void rtuOAT::start() {
-  xTaskCreatePinnedToCore(modbus_Task, "Task0", 10000, this, 6, NULL, 0);
-  xTaskCreatePinnedToCore(Network_Task, "Task1", 10000, this, 5, NULL, 0);
-  xTaskCreatePinnedToCore(func1_Task, "Task2", 10000, this, 4, NULL, 0);
-  xTaskCreatePinnedToCore(func2_Task, "Task3", 10000, this, 3, NULL, 0);
+  xTaskCreatePinnedToCore(modbus_Task, "Task1", 10000, this, 5, NULL, 0);
+  xTaskCreatePinnedToCore(Network_Task, "Task2", 10000, this, 4, NULL, 0);
+  xTaskCreatePinnedToCore(mqtt_Task, "Task3", 10000, this, 3, NULL, 0);
   xTaskCreatePinnedToCore(broke_modbus_Task, "Task4", 10000, this, 2, NULL, 0);
   xTaskCreatePinnedToCore(esp_Task, "Task5", 10000, this, 1, NULL, 0);
 }
@@ -154,12 +165,12 @@ void rtuOAT::Network_Task(void *pvParam) {
       /*reconnect mqtt*/
       instance->reconnect();
     }
-    Serial.printf("Network_Task Stack:%d\n", uxTaskGetStackHighWaterMark(NULL));
+    // Serial.printf("Network_Task Stack:%d\n", uxTaskGetStackHighWaterMark(NULL));
     vTaskDelay(pdMS_TO_TICKS(itr_network));  // loop get value every 5 sec
   }
 }
 
-void rtuOAT::func1_Task(void *pvParam) {
+void rtuOAT::mqtt_Task(void *pvParam) {
   rtuOAT *instance = (rtuOAT *)pvParam;
   rtuOAT *dpName = (rtuOAT *)(pvParam);
   rtuOAT *macNo = (rtuOAT *)(pvParam);
@@ -168,11 +179,11 @@ void rtuOAT::func1_Task(void *pvParam) {
   strcpy(topic_pub, topic_pub_1);
   strcat(topic_pub, dpName->dp_name);
   strcat(topic_pub, macNo->mac_no);
-
+  Serial.printf("topic: %s\n",topic_pub);
   while (1) {
     unsigned long long int start = micros();
     bool change_1 = false;
-    StaticJsonDocument<500> json_1;  /*this value follow https://arduinojson.org/v6/assistant/#/step1*/
+    StaticJsonDocument<500> json_1; /*this value follow https://arduinojson.org/v6/assistant/#/step1*/
     // check data type 2 change
     for (int i = 0; i < sizeof(def_tb) / sizeof(def_tb[0]); i++) {
       if (def_tb[i][2] == "2") {
@@ -182,7 +193,7 @@ void rtuOAT::func1_Task(void *pvParam) {
         }
       }
     }
-    if (change_1 == true) {  // data change !!!
+    if (change_1) {  // data change !!!
 
       /*----------------- rssi value -----------------*/
       json_1["rssi"] = (float)WiFi.RSSI();
@@ -203,15 +214,6 @@ void rtuOAT::func1_Task(void *pvParam) {
       // instance->publishMessage(mcNo->mc_no, json_topic1.c_str());
       instance->publishMessage(topic_pub, json_topic1.c_str());
       Serial.println(json_topic1);
-      // Serial.println(JsonSize);
-      // DeserializationError error = deserialize(json_1, json_topic1);
-      // if (error) {
-      //   Serial.print("deserializeJson() failed: ");
-      //   Serial.println(error.c_str());
-      // }
-      // if (json_1.overflowed()) {
-      //   Serial.println("JsonDocument overflowed!!")
-      // }
       for (int k = 0; k < sizeof(def_tb) / sizeof(def_tb[0]); k++) {
         if (def_tb[k][2] == "2") {
           def_tb[k][4] = def_tb[k][3];
@@ -224,65 +226,12 @@ void rtuOAT::func1_Task(void *pvParam) {
   }
 }
 
-void MicMMS::func2_Task(void *pvParam) {
-  MicMMS *instance = (MicMMS *)pvParam;
-  MicMMS *dpName = (MicMMS *)(pvParam);
-  MicMMS *macNo = (MicMMS *)(pvParam);
 
-  char topic_pub[30];
-  strcpy(topic_pub, topic_pub_2);
-  strcat(topic_pub, dpName->dp_name);
-  strcat(topic_pub, macNo->mac_no);
-
-  while (1) {
-    unsigned long long int start = micros();
-    bool data_check1 = false;
-    uint8_t count_data1 = 0;
-    for (int i = 0; i < sizeof(def_tb) / sizeof(def_tb[0]); i++) {
-      if (def_tb[i][2] == "1") {    // type status
-        if (def_tb[i][3] == "1") {  // value to register(number)
-          count_data1++;
-        }
-      }
-    }
-    if (count_data1 == 1) {  // condition to protection from many value
-      data_check1 = true;
-    } else {
-      data_check1 = false;
-      count_data1 = 0;
-    }
-    StaticJsonDocument<300> json_2;
-    if (data_check1 == true) {  // data change and only one!!
-      /*----------------- Status data -----------------*/
-      for (int i = 0; i < sizeof(def_tb) / sizeof(def_tb[0]); i++) {
-        if (def_tb[i][2] == "1") {
-          if (def_tb[i][3] == "1") {
-            status = def_tb[i][0];
-            json_2["status"] = status;
-          }
-        }
-      }
-    }
-    /*----------------- Publish data -----------------*/
-    if (status != prv_status) {
-      String json_topic2;
-      serializeJson(json_2, json_topic2);
-      instance->publishMessage(topic_pub, json_topic2.c_str());
-      Serial.println(json_topic2);
-      prv_status = status;
-      ct_fn2 = micros() - start;
-    }
-    // interval work loop 100-110 ms
-    vTaskDelay(pdMS_TO_TICKS(itr_fnc_2));
-  }
-}
-
-
-void MicMMS::broke_modbus_Task(void *pvParam) {  // Check modbus,Broker alive
-  MicMMS *instance = (MicMMS *)pvParam;
-  MicMMS *dpName = (MicMMS *)(pvParam);
-  MicMMS *macNo = (MicMMS *)(pvParam);
-  MicMMS *vrs_Code = (MicMMS *)(pvParam);
+void rtuOAT::broke_modbus_Task(void *pvParam) {  // Check modbus,Broker alive
+  rtuOAT *instance = (rtuOAT *)pvParam;
+  rtuOAT *dpName = (rtuOAT *)(pvParam);
+  rtuOAT *macNo = (rtuOAT *)(pvParam);
+  rtuOAT *vrs_Code = (rtuOAT *)(pvParam);
 
   char topic_pub[30];
   strcpy(topic_pub, topic_broke_modbus);
@@ -298,8 +247,8 @@ void MicMMS::broke_modbus_Task(void *pvParam) {  // Check modbus,Broker alive
     }
     json_4["broker"] = bkr_connect;
 
-    query_check1 = instance->modbus.getInCnt();   // Get input messages counter value and return input messages counter
-    query_check2 = instance->modbus.getOutCnt();  // Get transmitted messages counter value and return transmitted messages counter
+    query_check1 = instance->modbus_slave.getInCnt();   // Get input messages counter value and return input messages counter
+    query_check2 = instance->modbus_slave.getOutCnt();  // Get transmitted messages counter value and return transmitted messages counter
     // printf("query_check1 : %d,query_temp1 : %d,query_check2 : %d,query_temp2 : %d\n", query_check1, query_temp1, query_check2, query_temp2);
 
     if ((start - prv_time_2) >= 5000) {  // Check data from GOT every 5s
@@ -313,7 +262,7 @@ void MicMMS::broke_modbus_Task(void *pvParam) {  // Check modbus,Broker alive
       query_temp2 = query_check2;
     }
     json_4["modbus"] = modb_check;
-    json_4["version"] = vrs_Code->vrs_code;  // code version
+    // json_4["version"] = vrs_Code->vrs_code;  // code version
 
     if (((bkr_connect == 1) && (tigger_1 == 1)) || ((start - prv_time_1) >= (5 * (60 * 1000)))) {  // Use tigger = 1 for Publish first time And Publish data every 30 mins.
       serializeJson(json_4, json_topic4);
@@ -326,10 +275,10 @@ void MicMMS::broke_modbus_Task(void *pvParam) {  // Check modbus,Broker alive
   }
 }
 
-void MicMMS::esp_Task(void *pvParam) {  // ESP status
-  MicMMS *instance = (MicMMS *)pvParam;
-  MicMMS *dpName = (MicMMS *)(pvParam);
-  MicMMS *macNo = (MicMMS *)(pvParam);
+void rtuOAT::esp_Task(void *pvParam) {  // ESP status
+  rtuOAT *instance = (rtuOAT *)pvParam;
+  rtuOAT *dpName = (rtuOAT *)(pvParam);
+  rtuOAT *macNo = (rtuOAT *)(pvParam);
 
   char topic_pub[30];
   strcpy(topic_pub, topic_esp_health);
