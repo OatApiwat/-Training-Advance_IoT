@@ -8,8 +8,52 @@ IPAddress ip(192, 168, 3, 19);
 ModbusEthernet mb;
 EthernetServer server(502);
 
-const int max_data = 5;
+const int max_data = 60;
 uint16_t modbus_data[max_data];
+
+void setup() {
+  Serial.begin(115200);
+  Serial1.begin(115200, SERIAL_8N1, 18, 17);
+  Ethernet.begin(mac, ip);
+  delay(1000);
+
+#if defined(ARDUINO_ESP32S2_DEV) 
+  Ethernet.init(34);  // SS Pin for SMM-002
+#elif defined(ARDUINO_ESP32S3_DEV)
+  Ethernet.init(10);  // SS Pin for SMM-002A
+#endif
+
+  mb.server();
+  server.begin();
+  for (int i = 0; i < max_data; i++) {
+    mb.addReg(HREG(i));
+  }
+
+  xTaskCreatePinnedToCore(read_modbus, "Task1", 5000, NULL, 1, NULL, 0);
+  xTaskCreatePinnedToCore(print, "Task2", 5000, NULL, 2, NULL, 0);
+}
+void setup() {
+  Serial.begin(115200);
+  Serial1.begin(115200, SERIAL_8N1, 18, 17);
+  Ethernet.begin(mac, ip);
+  delay(1000);
+
+#if defined(ARDUINO_ESP32S2_DEV) 
+  Ethernet.init(34);  // SS Pin for SMM-002
+#elif defined(ARDUINO_ESP32S3_DEV)
+  Ethernet.init(10);  // SS Pin for SMM-002A
+#endif
+
+  mb.server();
+  server.begin();
+  for (int i = 0; i < max_data; i++) {
+    mb.addReg(HREG(i));
+  }
+
+  xTaskCreatePinnedToCore(read_modbus, "Task1", 5000, NULL, 1, NULL, 0);
+  xTaskCreatePinnedToCore(print, "Task2", 5000, NULL, 2, NULL, 0);
+}
+
 
 void read_modbus(void* parameter) {
   while (true) {
@@ -41,27 +85,6 @@ void print(void* parameter) {
   }
 }
 
-void setup() {
-  Serial.begin(115200);
-  Serial1.begin(115200, SERIAL_8N1, 18, 17);
-  Ethernet.begin(mac, ip);
-  delay(1000);
-
-#if defined(ARDUINO_ESP32S2_DEV) 
-  Ethernet.init(34);  // SS Pin for SMM-002
-#elif defined(ARDUINO_ESP32S3_DEV)
-  Ethernet.init(10);  // SS Pin for SMM-002A
-#endif
-
-  mb.server();
-  server.begin();
-  for (int i = 0; i < max_data; i++) {
-    mb.addReg(HREG(i));
-  }
-
-  xTaskCreatePinnedToCore(read_modbus, "Task1", 5000, NULL, 1, NULL, 0);
-  xTaskCreatePinnedToCore(print, "Task2", 5000, NULL, 2, NULL, 0);
-}
 
 void loop() {
 }

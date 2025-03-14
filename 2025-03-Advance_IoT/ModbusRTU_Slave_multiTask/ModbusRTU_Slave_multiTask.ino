@@ -1,13 +1,10 @@
-#include "ModbusRtu.h"
+#include <ModbusRtu.h>
 #include "HardwareSerial.h"
 
 Modbus slave(1 /*Slave ID (Address)*/, Serial1, 0 /*(ใช้โปรโตคอล Modbus แบบ Binary)*/);
 
 const int max_data = 60;
 uint16_t got_data[max_data];
-uint32_t sum_data, total_data;
-// String hex_, fristPart, secondPart, Lot_num, Lot_ttl;
-// long ascii_1, ascii_2;
 
 String def_tb[][5] = {
   // name||address||type||value||prv_value
@@ -27,41 +24,49 @@ String def_tb[][5] = {
   { "Status5", "13", "3", "", "" },
 };
 
+
 void setup() {
   Serial.begin(115200);
-  // Serial1.begin(115200);
-  Serial1.begin(115200, SERIAL_8N1, /*rx =*/18, /*tx =*/17);
+  Serial1.begin(115200, SERIAL_8N1, 18, 17);
+  xTaskCreatePinnedToCore(modbus_task, "Task1", 10000, NULL, 1, NULL, 0);
+  xTaskCreatePinnedToCore(check_task, "Task2", 10000, NULL, 2, NULL, 0);
   slave.start();
 }
 
-void loop() {
-  bool change_1 = false;
-  bool judge_1 = false;
-  slave.poll(got_data, max_data);
-  for (int i = 0; i < sizeof(def_tb) / sizeof(def_tb[0]); i++) {
-    // Serial.print(got_data[i]);
-    // Serial.print("/");
-    def_tb[i][3] = got_data[(def_tb[i][1].toInt()) - 1];
-  }
-  Serial.println();
-  // check data change
-  for (int i = 0; i < sizeof(def_tb) / sizeof(def_tb[0]); i++) {
-    if (def_tb[i][2] == "2") {
-      if (def_tb[i][3] != def_tb[i][4]) {
-        change_1 = true;
-      }
+void modbus_task(void* parameter) {
+  while (1) {
+    bool change_1 = false;
+    /*collect data to the table*/
+    for (int i = 0; i < sizeof(def_tb) / sizeof(def_tb[0]); i++) {
+      def_tb[i][3] = got_data[(def_tb[i][1].toInt()) - 1];
     }
+    // Serial.printf("modbus_task Stack:%d\n",uxTaskGetStackHighWaterMark(NULL));
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
-  if (change_1 == true) {
-    print_data();
-    for (int k = 0; k < sizeof(def_tb) / sizeof(def_tb[0]); k++) {
-      if (def_tb[k][2] == "2") {
-        def_tb[k][4] = def_tb[k][3];
-      }
-    }
-  }
+}
 
-  delay(500);
+void check_task(void* parameter) {
+  
+  while (1) {
+    bool change_1 = false;
+    // check data type 2 is changed
+    for (int i = 0; i < sizeof(def_tb) / sizeof(def_tb[0]); i++) {
+      if (def_tb[i][2] == "2") {
+        if (def_tb[i][3] != def_tb[i][4]) {
+          change_1 = true;
+        }
+      }
+    }
+    if (change_1) {
+      for (int k = 0; k < sizeof(def_tb) / sizeof(def_tb[0]); k++) {
+        if (def_tb[k][2] == "2") {
+          def_tb[k][4] = def_tb[k][3];
+        }
+      }
+      print_data();
+    }
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
 }
 
 void print_data() {
@@ -72,4 +77,11 @@ void print_data() {
     }
     Serial.println();  // ขึ้นบรรทัดใหม่เมื่อจบหนึ่งแถว
   }
+  Serial.println("/****************************/");
+}
+
+
+
+void loop() {
+  slave.poll(got_data, max_data);
 }
