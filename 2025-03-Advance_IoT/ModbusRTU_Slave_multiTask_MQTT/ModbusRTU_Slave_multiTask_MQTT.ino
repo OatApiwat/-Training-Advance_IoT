@@ -96,7 +96,7 @@ void setup() {
   setup_wifi();
   mqttClient.setServer(mqtt_server, 1883);
   xTaskCreatePinnedToCore(modbus_task, "Task1", 10000, NULL, 1, NULL, 0);
-  xTaskCreatePinnedToCore(check_task, "Task2", 10000, NULL, 2, NULL, 0);
+  xTaskCreatePinnedToCore(mqtt_task, "Task2", 10000, NULL, 2, NULL, 0);
   slave.start();
 }
 
@@ -115,7 +115,7 @@ void modbus_task(void* parameter) {
   }
 }
 
-void check_task(void* parameter) {
+void mqtt_task(void* parameter) {
 
   while (1) {
     bool change_1 = false;
